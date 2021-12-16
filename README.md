@@ -1,4 +1,4 @@
-GStreamer OBS Studio plugin
+GStreamer OBS Studio plugin (was, adding stream-in-sync capabilities)
 ===
 
 1. An OBS Studio source plugin to feed GStreamer launch pipelines into [OBS

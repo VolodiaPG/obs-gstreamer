@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "gst.h": "c",
+        "net.h": "c",
+        "app.h": "c"
+    }
+}

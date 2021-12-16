@@ -42,7 +42,7 @@ int main()
     assert(res == MODULE_SUCCESS);
     obs_init_module(module);
 
-    res = obs_open_module(&module, "/usr/local/lib/obs-plugins/obs-ffmpeg.so", NULL);
+    res = obs_open_module(&module, "/usr/lib/obs-plugins/obs-ffmpeg.so", NULL);
     assert(res == MODULE_SUCCESS);
     obs_init_module(module);
 
@@ -98,33 +98,33 @@ int main()
         blog(LOG_INFO, "  %s", tmp);
     }
 
-    obs_source_t *source = obs_source_create("gstreamer-source", "source", NULL, NULL);
-    obs_source_t *filter_video = obs_source_create("gstreamer-filter-video", "video filter", NULL, NULL);
-    obs_source_t *filter_audio = obs_source_create("gstreamer-filter-audio", "audio filter", NULL, NULL);
-    obs_encoder_t *encoder_video = obs_video_encoder_create("gstreamer-encoder", "encoder_video", NULL, NULL);
-    obs_encoder_t *encoder_audio = obs_audio_encoder_create("ffmpeg_aac", "encoder_audio", NULL, 0, NULL);
-    obs_output_t *output = obs_output_create("gstreamer-output", "output", NULL, NULL);
+    obs_source_t *source = obs_source_create("streaminsync", "source", NULL, NULL);
+    // obs_source_t *filter_video = obs_source_create("gstreamer-filter-video", "video filter", NULL, NULL);
+    // obs_source_t *filter_audio = obs_source_create("gstreamer-filter-audio", "audio filter", NULL, NULL);
+    // obs_encoder_t *encoder_video = obs_video_encoder_create("gstreamer-encoder", "encoder_video", NULL, NULL);
+    // obs_encoder_t *encoder_audio = obs_audio_encoder_create("ffmpeg_aac", "encoder_audio", NULL, 0, NULL);
+    // obs_output_t *output = obs_output_create("gstreamer-output", "output", NULL, NULL);
 
-    obs_source_filter_add(source, filter_video);
-    obs_source_filter_add(source, filter_audio);
+    // obs_source_filter_add(source, filter_video);
+    // obs_source_filter_add(source, filter_audio);
     obs_set_output_source(0, source);
-    obs_encoder_set_video(encoder_video, obs_get_video());
-    obs_encoder_set_audio(encoder_audio, obs_get_audio());
-    obs_output_set_video_encoder(output, encoder_video);
-    obs_output_set_audio_encoder(output, encoder_audio, 0);
-    obs_output_start(output);
+    // obs_encoder_set_video(encoder_video, obs_get_video());
+    // obs_encoder_set_audio(encoder_audio, obs_get_audio());
+    // obs_output_set_video_encoder(output, encoder_video);
+    // obs_output_set_audio_encoder(output, encoder_audio, 0);
+    // obs_output_start(output);
 
     blog(LOG_INFO, "---------------------------------");
     blog(LOG_INFO, "Running. Press ENTER to stop.");
     getchar();
 
-    obs_output_stop(output);
+    // obs_output_stop(output);
 
-    obs_output_release(output);
-    obs_encoder_release(encoder_video);
-    obs_encoder_release(encoder_audio);
-    obs_source_release(filter_video);
-    obs_source_release(filter_audio);
+    // obs_output_release(output);
+    // obs_encoder_release(encoder_video);
+    // obs_encoder_release(encoder_audio);
+    // obs_source_release(filter_video);
+    // obs_source_release(filter_audio);
     obs_source_release(source);
 
     obs_shutdown();
