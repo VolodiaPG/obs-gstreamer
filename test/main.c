@@ -38,7 +38,7 @@ int main()
 
     obs_module_t *module;
 
-    int res = obs_open_module(&module, "/usr/local/lib/obs-plugins/obs-gstreamer.so", NULL);
+    int res = obs_open_module(&module, "../build/obs-gstreamer.so", NULL);
     assert(res == MODULE_SUCCESS);
     obs_init_module(module);
 
