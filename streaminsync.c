@@ -350,7 +350,7 @@ typedef struct
 static void cb_new_pad(GstElement *element, GstPad *pad, gpointer data)
 {
 	gchar *name;
-	GstElement *sink = data;
+	GstPad *sink = data;
 
 	name = gst_pad_get_name(pad);
 	g_print("A new pad %s was created for %s\n", name, gst_element_get_name(element));
@@ -359,7 +359,8 @@ static void cb_new_pad(GstElement *element, GstPad *pad, gpointer data)
 	g_print("element %s will be linked to %s\n",
 			gst_element_get_name(element),
 			gst_element_get_name(sink));
-	gst_element_link(element, sink);
+	gst_pad_link(pad, sink);
+	// gst_element_link(element, sink);
 }
 
 static pipeline_t *create_streaminsync_pipeline(config_t *config)
