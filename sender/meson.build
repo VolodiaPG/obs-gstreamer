@@ -25,7 +25,7 @@ executable('sender',
   'sender.c',
   vcs_tag(
     command : ['git', 'rev-parse', '--short', 'HEAD'],
-    input : '../version.c.in',
+    input : 'version.c.in',
     output : 'version.c',
   ),
   name_prefix : '',

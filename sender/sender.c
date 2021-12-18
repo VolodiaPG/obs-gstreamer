@@ -26,8 +26,43 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <argp.h>
 
 #include "log.h"
+
+extern const char *argp_program_version;
+
+const char *argp_program_bug_address =
+    "https://github.com/VolodiaPG/obs-gstreamer";
+
+/* Program documentation. */
+static char doc[] =
+    "Stream in Sync sender -- a program to send audio and video to a receiver synchronising all those sources";
+
+/* A description of the arguments we accept. */
+#define NB_CLI_ARGS 2
+static char args_doc[] = "RECEIVER_IP RECEIVER_PORT";
+
+#define SHORT_VIDEO_SOURCE 'i'
+#define SHORT_AUDIO_SOURCE 'a'
+#define SHORT_BITRATE 'b'
+#define SHORT_WITDH 'w'
+#define SHORT_HEIGHT 'h'
+#define SHORT_FRAMERATE 'f'
+#define SHORT_NTP_IP 'n'
+#define SHORT_NTP_PORT 'p'
+
+/* The options we understand. */
+static struct argp_option options[] = {
+    {"videosrc", SHORT_VIDEO_SOURCE, "NAME", 0, "Video source to use."},
+    {"audiosrc", SHORT_VIDEO_SOURCE, "NAME", 0, "Audio source to use."},
+    {"vbitrate", SHORT_BITRATE, "BITRATE", 0, "Video bitrate to use."},
+    {"width", SHORT_WITDH, "WIDTH", 0, "Video width to use."},
+    {"height", SHORT_HEIGHT, "HEIGHT", 0, "Video height to use."},
+    {"framerate", SHORT_FRAMERATE, "FPS", 0, "Video framerate to use."},
+    {"ntp-ip", SHORT_NTP_IP, "IP", 0, "IP address of the NTP server."},
+    {"ntp-port", SHORT_NTP_PORT, "PORT", 0, "Port of the NTP server."},
+    {0}};
 
 #define NB_PORTS 6
 typedef struct
@@ -46,6 +81,12 @@ typedef struct
     // 4: audio
     // 5: audio
     gint receiver_ports[NB_PORTS];
+    const gchar *videosource;
+    const gchar *audiosource;
+    gint bitrate;
+    gint framerate;
+    gint width;
+    gint height;
 } settings_t;
 
 typedef struct
@@ -59,7 +100,7 @@ typedef struct
     GCond cond;
 } data_t;
 
-static void create_pipeline(data_t *data);
+static bool create_pipeline(data_t *data);
 
 static void timeout_destroy(gpointer user_data)
 {
@@ -165,7 +206,7 @@ static void cb_new_pad(GstElement *element, GstPad *pad, gpointer data)
     // gst_element_link(element, sink);
 }
 
-static void create_pipeline(data_t *data)
+static bool create_pipeline(data_t *data)
 {
     GError *err = NULL;
 
@@ -181,12 +222,12 @@ static void create_pipeline(data_t *data)
 
     // VIDEO
 
-    GstElement *vsource = gst_element_factory_make("ximagesrc", NULL);
+    GstElement *vsource = gst_element_factory_make(data->settings->videosource, NULL);
     GstCaps *vcaps = gst_caps_new_simple("video/x-raw",
                                          "format", G_TYPE_STRING, "I420",
-                                         "width", G_TYPE_INT, 1920,
-                                         "height", G_TYPE_INT, 1080,
-                                         "framerate", GST_TYPE_FRACTION, 30, 1,
+                                         "width", G_TYPE_INT, data->settings->width,
+                                         "height", G_TYPE_INT, data->settings->height,
+                                         "framerate", GST_TYPE_FRACTION, data->settings->framerate, 1,
                                          NULL);
     GstElement *vcapsfilter = gst_element_factory_make("capsfilter", NULL);
     g_object_set(vcapsfilter, "caps", vcaps, NULL);
@@ -203,7 +244,7 @@ static void create_pipeline(data_t *data)
                  "key-int-max", 30,
                  "bframes", 2,
                  "byte-stream", TRUE,
-                 "bitrate", 3000,
+                 "bitrate", data->settings->bitrate,
                  "speed-preset", 3, // veryfast
                  "threads", 1,
                  "pass", 0, // O: cbr
@@ -304,7 +345,7 @@ static void create_pipeline(data_t *data)
         || !gst_element_link_many(asource, aconvert, acapsfilter, aenc, apay, artpqueue, NULL))
     {
         log_warn("can't link elements");
-        return;
+        return false;
     }
 
     gst_element_link_pads(vrtpqueue, "src", rtpbin, "send_rtp_sink_0");
@@ -329,12 +370,14 @@ static void create_pipeline(data_t *data)
         log_error("Cannot start GStreamer: %s", err->message);
         g_error_free(err);
 
-        return;
+        return false;
     }
 
     GstBus *bus = gst_element_get_bus(data->pipe);
     gst_bus_add_watch(bus, bus_callback, data);
     gst_object_unref(bus);
+
+    return true;
 }
 
 static gpointer _start(gpointer user_data)
@@ -427,26 +470,107 @@ void gstreamer_source_get_defaults(settings_t *settings)
 
     for (int ii = 0; ii < NB_PORTS; ii++)
         settings->receiver_ports[ii] = 5000 + ii;
+
     settings->clock_ip = "45.159.204.28";
     settings->clock_port = 123;
+    settings->videosource = "videotestsrc";
+    settings->audiosource = "audiotestsrc";
+    settings->bitrate = 3000;
+    settings->framerate = 30;
+    settings->width = 1920;
+    settings->height = 1080;
 }
 
-int main()
+/* Parse a single option. */
+static error_t
+parse_opt(int key, char *arg, struct argp_state *state)
 {
-    gst_init(NULL, NULL);
+    /* Get the input argument from argp_parse, which we
+       know is a pointer to our arguments structure. */
+    settings_t *settings = state->input;
 
+    switch (key)
+    {
+    case SHORT_VIDEO_SOURCE:
+        settings->videosource = arg;
+        break;
+    case SHORT_AUDIO_SOURCE:
+        settings->audiosource = arg;
+        break;
+    case SHORT_BITRATE:
+        settings->bitrate = atoi(arg);
+        break;
+    case SHORT_WITDH:
+        settings->width = atoi(arg);
+        break;
+    case SHORT_HEIGHT:
+        settings->height = atoi(arg);
+        break;
+    case SHORT_FRAMERATE:
+        settings->framerate = atoi(arg);
+        break;
+    case SHORT_NTP_PORT:
+        settings->clock_port = atoi(arg);
+        break;
+    case SHORT_NTP_IP:
+        settings->clock_ip = arg;
+        break;
+
+    case ARGP_KEY_ARG:
+        if (state->arg_num >= NB_CLI_ARGS)
+            /* Too many arguments. */
+            argp_usage(state);
+
+        switch (state->arg_num)
+        {
+        case 0:
+            settings->receiver_ip = arg;
+            break;
+        case 1:
+            const gint port = atoi(arg);
+            for (gint ii = 0; ii < NB_PORTS; ii++)
+                settings->receiver_ports[ii] = port + ii;
+            break;
+        default:
+            log_warn("Missing at least one positional argument transformation in the argument parser (it's the dev's fault...)");
+        }
+
+        break;
+
+    case ARGP_KEY_END:
+        if (state->arg_num < NB_CLI_ARGS)
+            /* Not enough arguments. */
+            argp_usage(state);
+        break;
+
+    default:
+        return ARGP_ERR_UNKNOWN;
+    }
+    return 0;
+}
+
+/* Our argp parser. */
+static struct argp argp = {options, parse_opt, args_doc, doc};
+
+int main(int argc, char **argv)
+{
     settings_t settings;
     gstreamer_source_get_defaults(&settings);
+    argp_parse(&argp, argc, argv, 0, 0, &settings);
+
+    gst_init(NULL, NULL);
+
     data_t *data = gstreamer_source_create(&settings);
 
-    create_pipeline(data);
-    start(data);
+    if (create_pipeline(data))
+    {
 
-    printf("---------------------------------\n");
-    printf("Running. Press ENTER to stop.\n");
-    getchar();
-
-    stop(data);
+        start(data);
+        printf("---------------------------------\n");
+        printf("Running. Press ENTER to stop.\n");
+        getchar();
+        stop(data);
+    }
 
     g_free(data);
 
