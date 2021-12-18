@@ -27,6 +27,8 @@ endif
 
 shared_library('obs-gstreamer',
   'gstreamer.c',
+  'gstreamer-output.c',
+  'gstreamer-encoder.c',
   'streaminsync.c',
   vcs_tag(
     command : ['git', 'rev-parse', '--short', 'HEAD'],

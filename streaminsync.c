@@ -377,9 +377,10 @@ static pipeline_t *create_streaminsync_pipeline(config_t *config)
 
 	GstElement *rtpbin = gst_element_factory_make("rtpbin", NULL);
 	g_object_set(rtpbin, "latency", config->latency, NULL);
-	g_object_set(rtpbin, "ntp-time-source", "clock-time", NULL);
+	// g_object_set(rtpbin, "ntp-time-source", "clock-time", NULL);
+	g_object_set(rtpbin, "ntp-time-source", 3, NULL);
 	g_object_set(rtpbin, "ntp-sync", TRUE, NULL);
-	g_object_set(rtpbin, "buffer-mode", "synced", NULL);
+	g_object_set(rtpbin, "buffer-mode", 4, NULL); // synced
 
 	// Video
 	GstElement *vudpsrc = gst_element_factory_make("udpsrc", NULL);
@@ -398,6 +399,7 @@ static pipeline_t *create_streaminsync_pipeline(config_t *config)
 	GstElement *vdec = gst_element_factory_make("avdec_h264", NULL);
 	GstElement *vconv = gst_element_factory_make("videoconvert", NULL);
 	GstElement *vsink = gst_element_factory_make("appsink", NULL);
+	// GstElement *vsink = gst_element_factory_make("autovideosink", NULL);
 
 	GstElement *vudpsrc_1 = gst_element_factory_make("udpsrc", NULL);
 	g_object_set(vudpsrc_1, "port", config->ports[1], NULL);
@@ -443,8 +445,29 @@ static pipeline_t *create_streaminsync_pipeline(config_t *config)
 		return NULL;
 	}
 
-	gst_bin_add_many(GST_BIN(pipe), rtpbin, vudpsrc, vdepay, vparse, vdec, vconv, vudpsrc_1, vudpsink, vsink, audpsrc, adepay, adec, aconv, aresample, audpsrc_1, audpsink, asink, NULL);
-	if (!gst_element_link_many(vdepay, vparse, vdec, vconv, vsink, NULL) || !gst_element_link_many(adepay, adec, aconv, aresample, asink, NULL))
+	gst_bin_add_many(GST_BIN(pipe),
+					 rtpbin,
+					 // video
+					 vudpsrc,
+					 vdepay,
+					 vparse,
+					 vdec,
+					 vconv,
+					 vudpsrc_1,
+					 vudpsink,
+					 vsink,
+					 // audio
+					 audpsrc,
+					 adepay,
+					 adec,
+					 aconv,
+					 aresample,
+					 audpsrc_1,
+					 audpsink,
+					 asink,
+					 NULL);
+	if (!gst_element_link_many(vdepay, vparse, vdec, vconv, vsink, NULL) //
+		|| !gst_element_link_many(adepay, adec, aconv, aresample, asink, NULL))
 	{
 		GST_WARNING("can't link elements");
 		return NULL;
@@ -463,8 +486,8 @@ static pipeline_t *create_streaminsync_pipeline(config_t *config)
 	GstPad *adepay_pad = gst_element_get_static_pad(adepay, "sink");
 	g_signal_connect(rtpbin, "pad-added", G_CALLBACK(cb_new_pad), vdepay_pad);
 	g_signal_connect(rtpbin, "pad-added", G_CALLBACK(cb_new_pad), adepay_pad);
-	gst_object_unref(vdepay_pad);
-	gst_object_unref(adepay_pad);
+	// gst_object_unref(vdepay_pad);
+	// gst_object_unref(adepay_pad);
 
 	// create the pipeline_t struct
 	pipeline_t *pipeline = malloc(sizeof(pipeline_t));
@@ -498,7 +521,8 @@ static void create_pipeline(data_t *data)
 			port + 5}};
 
 	pipeline_t *pipeline = create_streaminsync_pipeline(&config);
-	if (!pipeline){
+	if (!pipeline)
+	{
 		blog(LOG_ERROR, "Pipelining failed (it is null)");
 		g_error_free(err);
 
@@ -526,12 +550,11 @@ static void create_pipeline(data_t *data)
 		g_object_set(pipeline->vsink, "max-buffers", 1, NULL);
 
 	// check if connected and remove if not
-	// GstElement *sink = gst_bin_get_by_name(GST_BIN(data->pipe), "video");
-	// GstPad *pad = gst_element_get_static_pad(sink, "sink");
-	// if (!gst_pad_is_linked(pad))
-	// 	gst_bin_remove(GST_BIN(data->pipe), appsink);
-	// gst_object_unref(pad);
-	// gst_object_unref(sink);
+	GstPad *pad = gst_element_get_static_pad(pipeline->vsink, "sink");
+	if (!gst_pad_is_linked(pad))
+		gst_bin_remove(GST_BIN(data->pipe), pipeline->vsink);
+	gst_object_unref(pad);
+	// gst_object_unref(pipeline->vsink);
 
 	// gst_object_unref(appsink);
 
@@ -545,10 +568,10 @@ static void create_pipeline(data_t *data)
 
 	// check if connected and remove if not
 	// sink = gst_bin_get_by_name(GST_BIN(data->pipe), "audio");
-	// pad = gst_element_get_static_pad(sink, "sink");
-	// if (!gst_pad_is_linked(pad))
-	// 	gst_bin_remove(GST_BIN(data->pipe), pipeline->asink);
-	// gst_object_unref(pad);
+	pad = gst_element_get_static_pad(pipeline->asink, "sink");
+	if (!gst_pad_is_linked(pad))
+		gst_bin_remove(GST_BIN(data->pipe), pipeline->asink);
+	gst_object_unref(pad);
 	// gst_object_unref(sink);
 
 	// gst_object_unref(pipeline->asink);
