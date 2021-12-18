@@ -22,6 +22,7 @@
 #include <gst/video/video.h>
 #include <gst/audio/audio.h>
 #include <gst/app/app.h>
+#include <gst/net/gstnet.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,8 +52,6 @@ typedef struct
 {
     GstElement *pipe;
     settings_t *settings;
-    gint64 frame_count;
-    gint64 audio_count;
     GSource *timeout;
     GThread *thread;
     GMainLoop *loop;
@@ -112,7 +111,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message,
                  : data->settings->restart_on_eos) &&
             data->timeout == NULL)
         {
-            data->timeout = data->settings->restart_timeout;
+            data->timeout = g_timeout_source_new(data->settings->restart_timeout);
             g_source_set_callback(data->timeout, start_pipe, data,
                                   timeout_destroy);
             g_source_attach(data->timeout,
@@ -170,19 +169,19 @@ static void create_pipeline(data_t *data)
 {
     GError *err = NULL;
 
-    GstElement *pipe = gst_pipeline_new("pipe");
+    data->pipe = gst_pipeline_new("pipe");
 
     GstClock *clock = gst_ntp_clock_new("main_ntp_clock", data->settings->clock_ip, data->settings->clock_port, 0);
-    gst_pipeline_use_clock(GST_PIPELINE(pipe), clock);
+    gst_pipeline_use_clock(GST_PIPELINE(data->pipe), clock);
 
     GstElement *rtpbin = gst_element_factory_make("rtpbin", NULL);
-    g_object_set(rtpbin, "rtp-profile", "avpf", NULL);
+    g_object_set(rtpbin, "rtp-profile", 3, NULL); // 3 = RTP/AVPF
     g_object_set(rtpbin, "rtcp-sync-send-time", FALSE, NULL);
     g_object_set(rtpbin, "ntp-time-source", 3, NULL); // 3 = clock-time
 
     // VIDEO
 
-    GstElement *vsource = gst_element_factory_make("videotestsrc", NULL);
+    GstElement *vsource = gst_element_factory_make("ximagesrc", NULL);
     GstCaps *vcaps = gst_caps_new_simple("video/x-raw",
                                          "format", G_TYPE_STRING, "I420",
                                          "width", G_TYPE_INT, 1920,
@@ -200,15 +199,18 @@ static void create_pipeline(data_t *data)
     GstElement *venc = gst_element_factory_make("x264enc", NULL);
     g_object_set(venc,
                  "tune", 0,
-                 "profile", 0,
+                 //  "profile", 0,
                  "key-int-max", 30,
-                 "bframes", 30,
+                 "bframes", 2,
                  "byte-stream", TRUE,
                  "bitrate", 3000,
-                 "speed-preset", 0,
+                 "speed-preset", 3, // veryfast
                  "threads", 1,
-                 "pass", 1, NULL);
-
+                 "pass", 0, // O: cbr
+                 NULL);
+    GstElement *venccapsfilter = gst_element_factory_make("capsfilter", NULL);
+    g_object_set(venccapsfilter, "caps", gst_caps_new_simple("video/x-h264", "profile", G_TYPE_STRING, "high", NULL),
+                 NULL);
     GstElement *vparse = gst_element_factory_make("h264parse", NULL);
     GstElement *vpay = gst_element_factory_make("rtph264pay", NULL);
     g_object_set(vpay,
@@ -270,14 +272,16 @@ static void create_pipeline(data_t *data)
     g_object_set(artcpsrc, "port", data->settings->receiver_ports[5], NULL);
 
     // Add all elements to the pipe
-    gst_bin_add_many(GST_BIN(pipe),
+    gst_bin_add_many(GST_BIN(data->pipe),
                      rtpbin,
+
                      vsource,
                      vcapsfilter,
                      vscale,
                      vconvert,
                      vqueue,
                      venc,
+                     venccapsfilter,
                      vparse,
                      vpay,
                      vrtpqueue,
@@ -296,20 +300,21 @@ static void create_pipeline(data_t *data)
                      artcpsrc,
                      NULL);
 
-    if (!gst_element_link_many(vsource, vscale, vconvert, vcapsfilter, vqueue, venc, vparse, vpay, NULL) //
-        || !gst_element_link_many(asource, aconvert, acapsfilter, aenc, apay, NULL))
+    if (!gst_element_link_many(vsource, vscale, vconvert, vcapsfilter, vqueue, venc, venccapsfilter, vparse, vpay, vrtpqueue, NULL) //
+        || !gst_element_link_many(asource, aconvert, acapsfilter, aenc, apay, artpqueue, NULL))
     {
         log_warn("can't link elements");
+        return;
     }
 
     gst_element_link_pads(vrtpqueue, "src", rtpbin, "send_rtp_sink_0");
-    gst_element_link_pads(rtpbin, "send_rtp_src_0", vrtcpsink, "sink");
-    gst_element_link_pads(rtpbin, "send_rtcp_src_0", vrtpsink, "sink");
+    gst_element_link_pads(rtpbin, "send_rtcp_src_0", vrtcpsink, "sink");
+    gst_element_link_pads(rtpbin, "send_rtp_src_0", vrtpsink, "sink");
     gst_element_link_pads(vrtcpsrc, "src", rtpbin, "recv_rtcp_sink_0");
 
     gst_element_link_pads(artpqueue, "src", rtpbin, "send_rtp_sink_1");
-    gst_element_link_pads(rtpbin, "send_rtp_src_1", artcpsink, "sink");
-    gst_element_link_pads(rtpbin, "send_rtcp_src_1", artpsink, "sink");
+    gst_element_link_pads(rtpbin, "send_rtcp_src_1", artcpsink, "sink");
+    gst_element_link_pads(rtpbin, "send_rtp_src_1", artpsink, "sink");
     gst_element_link_pads(artcpsrc, "src", rtpbin, "recv_rtcp_sink_1");
 
     GstPad *vscalesink = gst_element_get_static_pad(vscale, "sink");
@@ -326,9 +331,6 @@ static void create_pipeline(data_t *data)
 
         return;
     }
-
-    data->frame_count = 0;
-    data->audio_count = 0;
 
     GstBus *bus = gst_element_get_bus(data->pipe);
     gst_bus_add_watch(bus, bus_callback, data);
@@ -431,6 +433,8 @@ void gstreamer_source_get_defaults(settings_t *settings)
 
 int main()
 {
+    gst_init(NULL, NULL);
+
     settings_t settings;
     gstreamer_source_get_defaults(&settings);
     data_t *data = gstreamer_source_create(&settings);
@@ -438,7 +442,8 @@ int main()
     create_pipeline(data);
     start(data);
 
-    printf("Press enter to end the sender.\n");
+    printf("---------------------------------\n");
+    printf("Running. Press ENTER to stop.\n");
     getchar();
 
     stop(data);
