@@ -7,3 +7,6 @@ setup:
 
 build: 
 	ninja -C build
+
+install:
+	ninja -C build install
