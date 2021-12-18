@@ -2,6 +2,9 @@
     "files.associations": {
         "gst.h": "c",
         "net.h": "c",
-        "app.h": "c"
-    }
+        "app.h": "c",
+        "main.C": "cpp",
+        "log.C": "cpp"
+    },
+    "mesonbuild.configureOnOpen": true
 }
