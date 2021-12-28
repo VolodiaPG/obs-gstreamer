@@ -21,6 +21,7 @@
 project('stream-in-sync-receiver', 'c')
 
 executable('receiver',
+  'global.c',
   'receiver.c',
   'main.c',
   vcs_tag(

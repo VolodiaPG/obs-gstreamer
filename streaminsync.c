@@ -26,6 +26,11 @@
 
 #include "receiver/receiver.h"
 
+#define PORTS_FROM(port)                                       \
+	{                                                          \
+		port, port + 1, port + 2, port + 3, port + 4, port + 5 \
+	}
+
 typedef struct
 {
 	GstElement *pipe;
@@ -323,39 +328,40 @@ static gboolean loop_startup(gpointer user_data)
 	return G_SOURCE_REMOVE;
 }
 
-
 static void create_pipeline(data_t *data)
 {
 	GError *err = NULL;
 
 	const char *ip = obs_data_get_string(data->settings, "client_ip");
-	const int port = obs_data_get_int(data->settings, "port");
-	const int latency = obs_data_get_int(data->settings, "latency");
+	const gint port = obs_data_get_int(data->settings, "port");
+	const gint latency = obs_data_get_int(data->settings, "latency");
+	const gint video_id = obs_data_get_int(data->settings, "source_id") * 2;
+	const gint audio_id = video_id + 1;
 
-	config_t config = {
-		.clock_ip = "45.159.204.28",
-		.clock_port = 123,
-		.latency = latency,
-		.dest = ip,
-		.ports = {
-			port,
-			port + 1,
-			port + 2,
-			port + 3,
-			port + 4,
-			port + 5}};
+	{
+		pipeline_config_t config = {
+			.clock_ip = "45.159.204.28",
+			.clock_port = 123,
+			.latency = latency};
+		data->pipe = create_streaminsync_pipeline(&config);
+	}
 
-	pipeline_t *pipeline = create_streaminsync_pipeline(&config);
-	add_incoming_source(pipeline, &config, 0, 1);
-	if (!pipeline)
+	{
+		receiver_config_t config = {
+			.video_id = video_id,
+			.audio_id = audio_id,
+			.dest = ip,
+			.ports = PORTS_FROM(port)};
+		add_incoming_source(data->pipe, &config);
+	}
+
+	if (data->pipe == NULL)
 	{
 		blog(LOG_ERROR, "Pipelining failed (it is null)");
 		g_error_free(err);
 
 		return;
 	}
-
-	data->pipe = pipeline->pipe;
 
 	if (err != NULL)
 	{
@@ -367,40 +373,61 @@ static void create_pipeline(data_t *data)
 		return;
 	}
 
-	GstAppSinkCallbacks video_cbs = {NULL, NULL, video_new_sample};
+	{
+		gchar *buf = g_strdup_printf(VSINK_NAME_FORMAT, video_id);
+		GstElement *appsink_video = gst_bin_get_by_name(GST_BIN(data->pipe),
+														buf);
+		g_free(buf);
+		if (appsink_video == NULL)
+		{
+			blog(LOG_ERROR, "Could not find appsink video");
+			obs_source_output_video(data->source, NULL);
+			return;
+		}
 
-	gst_app_sink_set_callbacks(GST_APP_SINK(pipeline->vsink), &video_cbs, data,
-							   NULL);
+		GstAppSinkCallbacks video_cbs = {NULL, NULL, video_new_sample};
+		gst_app_sink_set_callbacks(GST_APP_SINK(appsink_video), &video_cbs, data,
+								   NULL);
 
-	if (obs_data_get_bool(data->settings, "block_video"))
-		g_object_set(pipeline->vsink, "max-buffers", 1, NULL);
+		if (obs_data_get_bool(data->settings, "block_video"))
+			g_object_set(appsink_video, "max-buffers", 1, NULL);
+		// check if connected and remove if not
+		GstPad *pad = gst_element_get_static_pad(appsink_video, "sink");
+		if (!gst_pad_is_linked(pad))
+			gst_bin_remove(GST_BIN(data->pipe), appsink_video);
 
-	// check if connected and remove if not
-	GstPad *pad = gst_element_get_static_pad(pipeline->vsink, "sink");
-	if (!gst_pad_is_linked(pad))
-		gst_bin_remove(GST_BIN(data->pipe), pipeline->vsink);
-	gst_object_unref(pad);
-	// gst_object_unref(pipeline->vsink);
+		gst_object_unref(pad);
+		gst_object_unref(appsink_video);
+	}
 
-	// gst_object_unref(appsink);
+	{
+		gchar *buf = g_strdup_printf(ASINK_NAME_FORMAT, audio_id);
+		GstElement *appsink_audio = gst_bin_get_by_name(GST_BIN(data->pipe),
+														buf);
+		g_free(buf);
 
-	GstAppSinkCallbacks audio_cbs = {NULL, NULL, audio_new_sample};
+		if (appsink_audio == NULL)
+		{
+			blog(LOG_ERROR, "Could not find appsink audio");
+			obs_source_output_video(data->source, NULL);
+			return;
+		}
 
-	gst_app_sink_set_callbacks(GST_APP_SINK(pipeline->asink), &audio_cbs, data,
-							   NULL);
+		GstAppSinkCallbacks audio_cbs = {NULL, NULL, audio_new_sample};
+		gst_app_sink_set_callbacks(GST_APP_SINK(appsink_audio), &audio_cbs, data,
+								   NULL);
 
-	if (obs_data_get_bool(data->settings, "block_audio"))
-		g_object_set(pipeline->asink, "max-buffers", 1, NULL);
+		if (obs_data_get_bool(data->settings, "block_audio"))
+			g_object_set(appsink_audio, "max-buffers", 1, NULL);
+		// check if connected and remove if not
+		// sink = gst_bin_get_by_name(GST_BIN(data->pipe), "audio");
+		GstPad *pad = gst_element_get_static_pad(appsink_audio, "sink");
+		if (!gst_pad_is_linked(pad))
+			gst_bin_remove(GST_BIN(data->pipe), appsink_audio);
 
-	// check if connected and remove if not
-	// sink = gst_bin_get_by_name(GST_BIN(data->pipe), "audio");
-	pad = gst_element_get_static_pad(pipeline->asink, "sink");
-	if (!gst_pad_is_linked(pad))
-		gst_bin_remove(GST_BIN(data->pipe), pipeline->asink);
-	gst_object_unref(pad);
-	// gst_object_unref(sink);
-
-	// gst_object_unref(pipeline->asink);
+		gst_object_unref(pad);
+		gst_object_unref(appsink_audio);
+	}
 
 	data->frame_count = 0;
 	data->audio_count = 0;
@@ -408,8 +435,6 @@ static void create_pipeline(data_t *data)
 	GstBus *bus = gst_element_get_bus(data->pipe);
 	gst_bus_add_watch(bus, bus_callback, data);
 	gst_object_unref(bus);
-
-	free(pipeline);
 }
 
 static gpointer _start(gpointer user_data)
@@ -501,6 +526,7 @@ void gstreamer_source_destroy(void *user_data)
 
 void gstreamer_source_get_defaults(obs_data_t *settings)
 {
+	obs_data_set_default_int(settings, "source_id", 0);
 	obs_data_set_default_string(settings, "sender_ip", "127.0.0.1");
 	obs_data_set_default_int(settings, "port", 5000);
 	obs_data_set_default_int(settings, "latency", 5000);
@@ -530,6 +556,8 @@ obs_properties_t *gstreamer_source_get_properties(void *data)
 
 	obs_properties_set_flags(props, OBS_PROPERTIES_DEFER_UPDATE);
 
+	obs_properties_add_int(props, "source_id", "Pipe's id",
+						   0, 32, 1);
 	obs_properties_add_text(props, "sender_ip", "The sender's IP address",
 							OBS_TEXT_DEFAULT);
 	obs_properties_add_int(props, "port", "The first port to use",

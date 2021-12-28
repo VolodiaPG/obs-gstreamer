@@ -26,9 +26,11 @@ if not obs_dep.found()
 endif
 
 shared_library('obs-gstreamer',
+  'global.c',
   'gstreamer.c',
   'gstreamer-output.c',
   'gstreamer-encoder.c',
+  'receiver/receiver.c',
   'streaminsync.c',
   vcs_tag(
     command : ['git', 'rev-parse', '--short', 'HEAD'],

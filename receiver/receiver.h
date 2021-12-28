@@ -10,12 +10,19 @@
 #define LOGW(...) GST_WARNING(__VA_ARGS__)
 #define LOGE(...) GST_ERROR(__VA_ARGS__)
 
+#define VSINK_NAME_FORMAT "video_sink_%d"
+#define ASINK_NAME_FORMAT "audio_sink_%d"
+
 #define NB_PORTS 6
+
+extern const char* vsink_bin;
+extern const char* asink_bin;
+
 typedef struct
 {
 	const gchar *clock_ip;
 	const gint clock_port;
-	const gint latency;
+	const guint64 latency;
 } pipeline_config_t;
 
 typedef struct

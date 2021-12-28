@@ -20,13 +20,14 @@ GstElement *create_streaminsync_pipeline(pipeline_config_t *config)
 {
 	GstElement *pipe = gst_pipeline_new("pipe");
 
+	gst_pipeline_set_latency(GST_PIPELINE(pipe), config->latency * GST_MSECOND);
+
 	GstClock *clock = gst_ntp_clock_new("main_ntp_clock", config->clock_ip, config->clock_port, 0);
 
 	// gst_system_clock_set_default(clock);
 	gst_pipeline_use_clock(GST_PIPELINE(pipe), clock);
 	gst_clock_wait_for_sync(clock, GST_CLOCK_TIME_NONE);
 
-	gst_pipeline_set_latency(GST_PIPELINE(pipe), config->latency * GST_MSECOND);
 
 	GstElement *rtpbin = gst_element_factory_make("rtpbin", "rtpbin");
 	// g_object_set(rtpbin, "latency", config->latency, NULL);
@@ -48,6 +49,8 @@ GstElement *create_streaminsync_pipeline(pipeline_config_t *config)
 
 void add_incoming_source(GstElement *pipe, receiver_config_t *config)
 {
+	gchar *buf; // a general purpose buffer that can be freed after use
+
 	GstElement *rtpbin = gst_bin_get_by_name(GST_BIN(pipe), "rtpbin");
 	if (!rtpbin)
 	{
@@ -71,10 +74,13 @@ void add_incoming_source(GstElement *pipe, receiver_config_t *config)
 	GstElement *vparse = gst_element_factory_make("h264parse", NULL);
 	GstElement *vdec = gst_element_factory_make("avdec_h264", NULL);
 	GstElement *vconv = gst_element_factory_make("videoconvert", NULL);
-	// GstElement *vsink = gst_element_factory_make("appsink", NULL);
-	GstElement *vsink = gst_element_factory_make("autovideosink", NULL);
-	g_object_set(vsink, "sync", FALSE,
-				 "async", FALSE, NULL);
+
+	buf = g_strdup_printf(VSINK_NAME_FORMAT, config->video_id);
+	GstElement *vsink = gst_element_factory_make(vsink_bin, buf);
+	g_free(buf);
+
+	// g_object_set(vsink, "sync", FALSE,
+	// 			 "async", FALSE, NULL);
 
 	GstElement *vudpsrc_1 = gst_element_factory_make("udpsrc", NULL);
 	g_object_set(vudpsrc_1, "port", config->ports[1], NULL);
@@ -101,9 +107,13 @@ void add_incoming_source(GstElement *pipe, receiver_config_t *config)
 	GstElement *adec = gst_element_factory_make("opusdec", NULL);
 	GstElement *aconv = gst_element_factory_make("audioconvert", NULL);
 	GstElement *aresample = gst_element_factory_make("audioresample", NULL);
-	GstElement *asink = gst_element_factory_make("appsink", NULL);
-	g_object_set(asink, "sync", FALSE,
-				 "async", FALSE, NULL);
+
+	buf = g_strdup_printf(ASINK_NAME_FORMAT, config->audio_id);
+	GstElement *asink = gst_element_factory_make(asink_bin, buf);
+	g_free(buf);
+
+	// g_object_set(asink, "sync", FALSE,
+	// 			 "async", FALSE, NULL);
 
 	GstElement *audpsrc_1 = gst_element_factory_make("udpsrc", NULL);
 	g_object_set(audpsrc_1, "port", config->ports[4], NULL);
@@ -151,7 +161,7 @@ void add_incoming_source(GstElement *pipe, receiver_config_t *config)
 	// linking
 
 	// RTP bin pads
-	gchar *buf = g_strdup_printf("recv_rtp_sink_%d", config->video_id);
+	buf = g_strdup_printf("recv_rtp_sink_%d", config->video_id);
 	gst_element_link_pads(vudpsrc, "src", rtpbin, buf);
 	g_free(buf);
 
