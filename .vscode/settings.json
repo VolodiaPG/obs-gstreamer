@@ -4,7 +4,11 @@
         "net.h": "c",
         "app.h": "c",
         "main.C": "cpp",
-        "log.C": "cpp"
+        "log.C": "cpp",
+        "sender.h": "c",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp"
     },
     "mesonbuild.configureOnOpen": true
 }

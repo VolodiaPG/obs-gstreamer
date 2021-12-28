@@ -23,7 +23,8 @@
 #include <gst/video/video.h>
 #include <gst/audio/audio.h>
 #include <gst/app/app.h>
-#include <gst/net/gstnet.h>
+
+#include "receiver/receiver.h"
 
 typedef struct
 {
@@ -322,195 +323,19 @@ static gboolean loop_startup(gpointer user_data)
 	return G_SOURCE_REMOVE;
 }
 
-#define NB_PORTS 6
-
-typedef struct
-{
-	const gchar *clock_ip;
-	const gint clock_port;
-	const gint latency;
-	// Used ports, in order:
-	// 0: video
-	// 1: video
-	// 2: video
-	// 3: audio
-	// 4: audio
-	// 5: audio
-	const gint ports[NB_PORTS];
-	const gchar *dest;
-} config_t;
-
-typedef struct
-{
-	GstElement *pipe;
-	GstElement *vsink;
-	GstElement *asink;
-} pipeline_t;
-
-static void cb_new_pad(GstElement *element, GstPad *pad, gpointer data)
-{
-	gchar *name;
-	GstPad *sink = data;
-
-	name = gst_pad_get_name(pad);
-	g_print("A new pad %s was created for %s\n", name, gst_element_get_name(element));
-	g_free(name);
-
-	g_print("element %s will be linked to %s\n",
-			gst_element_get_name(element),
-			gst_element_get_name(sink));
-	gst_pad_link(pad, sink);
-	// gst_element_link(element, sink);
-}
-
-static pipeline_t *create_streaminsync_pipeline(config_t *config)
-{
-	if (!config)
-		return NULL;
-	if (!config->clock_ip || !config->ports)
-		return NULL;
-
-	GstElement *pipe = gst_pipeline_new("pipe");
-
-	GstClock *clock = gst_ntp_clock_new("main_ntp_clock", config->clock_ip, config->clock_port, 0);
-	gst_pipeline_use_clock(GST_PIPELINE(pipe), clock);
-
-	GstElement *rtpbin = gst_element_factory_make("rtpbin", NULL);
-	g_object_set(rtpbin, "latency", config->latency, NULL);
-	// g_object_set(rtpbin, "ntp-time-source", "clock-time", NULL);
-	g_object_set(rtpbin, "ntp-time-source", 3, NULL);
-	g_object_set(rtpbin, "ntp-sync", TRUE, NULL);
-	g_object_set(rtpbin, "buffer-mode", 4, NULL); // synced
-
-	// Video
-	GstElement *vudpsrc = gst_element_factory_make("udpsrc", NULL);
-	GstCaps *vcaps = gst_caps_new_simple("application/x-rtp",
-										 "media", G_TYPE_STRING, "video",
-										 "clock-rate", G_TYPE_INT, 90000,
-										 "encoding-name", G_TYPE_STRING, "H264",
-										 "payload", G_TYPE_INT, 96,
-										 NULL);
-
-	g_object_set(vudpsrc, "caps", vcaps, NULL);
-	g_object_set(vudpsrc, "port", config->ports[0], NULL);
-
-	GstElement *vdepay = gst_element_factory_make("rtph264depay", NULL);
-	GstElement *vparse = gst_element_factory_make("h264parse", NULL);
-	GstElement *vdec = gst_element_factory_make("avdec_h264", NULL);
-	GstElement *vconv = gst_element_factory_make("videoconvert", NULL);
-	GstElement *vsink = gst_element_factory_make("appsink", NULL);
-	// GstElement *vsink = gst_element_factory_make("autovideosink", NULL);
-
-	GstElement *vudpsrc_1 = gst_element_factory_make("udpsrc", NULL);
-	g_object_set(vudpsrc_1, "port", config->ports[1], NULL);
-
-	GstElement *vudpsink = gst_element_factory_make("udpsink", NULL);
-	g_object_set(vudpsrc_1, "port", config->ports[2], NULL);
-	g_object_set(vudpsink, "host", config->dest, NULL);
-	g_object_set(vudpsink, "sync", FALSE, NULL);
-	g_object_set(vudpsink, "async", FALSE, NULL);
-
-	// Audio
-	GstElement *audpsrc = gst_element_factory_make("udpsrc", NULL);
-	GstCaps *acaps = gst_caps_new_simple("application/x-rtp",
-										 "media", G_TYPE_STRING, "audio",
-										 "clock-rate", G_TYPE_INT, 48000,
-										 "encoding-name", G_TYPE_STRING, "OPUS",
-										 "payload", G_TYPE_INT, 96,
-										 NULL);
-
-	g_object_set(audpsrc, "caps", acaps, NULL);
-	g_object_set(audpsrc, "port", config->ports[3], NULL);
-
-	GstElement *adepay = gst_element_factory_make("rtpopusdepay", NULL);
-	GstElement *adec = gst_element_factory_make("opusdec", NULL);
-	GstElement *aconv = gst_element_factory_make("audioconvert", NULL);
-	GstElement *aresample = gst_element_factory_make("audioresample", NULL);
-	GstElement *asink = gst_element_factory_make("appsink", NULL);
-
-	GstElement *audpsrc_1 = gst_element_factory_make("udpsrc", NULL);
-	g_object_set(audpsrc_1, "port", config->ports[4], NULL);
-
-	GstElement *audpsink = gst_element_factory_make("udpsink", NULL);
-	g_object_set(audpsrc_1, "port", config->ports[5], NULL);
-	g_object_set(audpsink, "host", config->dest, NULL);
-	g_object_set(audpsink, "sync", FALSE, NULL);
-	g_object_set(audpsink, "async", FALSE, NULL);
-
-	if (!pipe || !rtpbin || !vudpsrc || !vdepay || !vparse || !vdec || !vconv || !vsink ||
-		!vudpsrc_1 || !vudpsink || !audpsrc || !adepay || !adec || !aconv || !aresample || !asink ||
-		!audpsrc_1 || !audpsink)
-	{
-		GST_WARNING("Not all elements could be created.\n");
-		return NULL;
-	}
-
-	gst_bin_add_many(GST_BIN(pipe),
-					 rtpbin,
-					 // video
-					 vudpsrc,
-					 vdepay,
-					 vparse,
-					 vdec,
-					 vconv,
-					 vudpsrc_1,
-					 vudpsink,
-					 vsink,
-					 // audio
-					 audpsrc,
-					 adepay,
-					 adec,
-					 aconv,
-					 aresample,
-					 audpsrc_1,
-					 audpsink,
-					 asink,
-					 NULL);
-	if (!gst_element_link_many(vdepay, vparse, vdec, vconv, vsink, NULL) //
-		|| !gst_element_link_many(adepay, adec, aconv, aresample, asink, NULL))
-	{
-		GST_WARNING("can't link elements");
-		return NULL;
-	}
-	// linking
-
-	// RTP bin pads
-	gst_element_link_pads(vudpsrc, "src", rtpbin, "recv_rtp_sink_0");
-	gst_element_link_pads(vudpsrc_1, "src", rtpbin, "recv_rtcp_sink_0");
-	gst_element_link_pads(rtpbin, "send_rtcp_src_0", vudpsink, "sink");
-	gst_element_link_pads(audpsrc, "src", rtpbin, "recv_rtp_sink_1");
-	gst_element_link_pads(audpsrc_1, "src", rtpbin, "recv_rtcp_sink_1");
-	gst_element_link_pads(rtpbin, "send_rtcp_src_1", audpsink, "sink");
-
-	GstPad *vdepay_pad = gst_element_get_static_pad(vdepay, "sink");
-	GstPad *adepay_pad = gst_element_get_static_pad(adepay, "sink");
-	g_signal_connect(rtpbin, "pad-added", G_CALLBACK(cb_new_pad), vdepay_pad);
-	g_signal_connect(rtpbin, "pad-added", G_CALLBACK(cb_new_pad), adepay_pad);
-	// gst_object_unref(vdepay_pad);
-	// gst_object_unref(adepay_pad);
-
-	// create the pipeline_t struct
-	pipeline_t *pipeline = malloc(sizeof(pipeline_t));
-	pipeline->pipe = pipe;
-	pipeline->vsink = vsink;
-	pipeline->asink = asink;
-
-	return pipeline;
-}
 
 static void create_pipeline(data_t *data)
 {
 	GError *err = NULL;
 
-	int port;
-	const char *ip;
-	ip = obs_data_get_string(data->settings, "client_ip");
-	port = obs_data_get_int(data->settings, "port");
+	const char *ip = obs_data_get_string(data->settings, "client_ip");
+	const int port = obs_data_get_int(data->settings, "port");
+	const int latency = obs_data_get_int(data->settings, "latency");
 
 	config_t config = {
 		.clock_ip = "45.159.204.28",
 		.clock_port = 123,
-		.latency = 500,
+		.latency = latency,
 		.dest = ip,
 		.ports = {
 			port,
@@ -521,6 +346,7 @@ static void create_pipeline(data_t *data)
 			port + 5}};
 
 	pipeline_t *pipeline = create_streaminsync_pipeline(&config);
+	add_incoming_source(pipeline, &config, 0, 1);
 	if (!pipeline)
 	{
 		blog(LOG_ERROR, "Pipelining failed (it is null)");
@@ -677,6 +503,7 @@ void gstreamer_source_get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_string(settings, "sender_ip", "127.0.0.1");
 	obs_data_set_default_int(settings, "port", 5000);
+	obs_data_set_default_int(settings, "latency", 5000);
 
 	obs_data_set_default_bool(settings, "restart_on_eos", true);
 	obs_data_set_default_bool(settings, "restart_on_error", false);
@@ -707,7 +534,8 @@ obs_properties_t *gstreamer_source_get_properties(void *data)
 							OBS_TEXT_DEFAULT);
 	obs_properties_add_int(props, "port", "The first port to use",
 						   1000, 65535, 1);
-
+	obs_properties_add_int(props, "latency", "End to end effective latency (must be at least the latency of all the links and the sources + encoders)",
+						   100, 120000, 1);
 	obs_properties_add_bool(props, "restart_on_eos",
 							"Try to restart when end of stream is reached");
 	obs_properties_add_bool(

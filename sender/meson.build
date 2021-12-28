@@ -23,6 +23,7 @@ project('stream-in-sync-sender', 'c')
 executable('sender',
   'log.c',
   'sender.c',
+  'main.c',
   vcs_tag(
     command : ['git', 'rev-parse', '--short', 'HEAD'],
     input : 'version.c.in',
