@@ -8,7 +8,10 @@
         "sender.h": "c",
         "array": "cpp",
         "string": "cpp",
-        "string_view": "cpp"
+        "string_view": "cpp",
+        "*.tcc": "c",
+        "cstdlib": "c",
+        "mutex": "c"
     },
     "mesonbuild.configureOnOpen": true
 }
