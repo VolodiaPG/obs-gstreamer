@@ -53,55 +53,18 @@ static void cb_new_pad(GstElement *element, GstPad *pad, gpointer raw_data)
 	if (sscanf(name, "recv_rtp_src_%u_%u_%u", &id, &ssrc, &pt) > 0 //
 		&& id == data->id)
 	{
-		// if (data->source != NULL)
-		// {
-		// 	source_data_t *parent = data->parent;
-		// 	GstElement *rtpbin = gst_bin_get_by_name(GST_BIN(parent->pipe), "rtpbin");
-		// 	if (!rtpbin)
-		// 	{
-		// 		LOGW("rtpbin not found");
-		// 	}
-		// 	// g_signal_emit_by_name(rtpbin, "reset-sync");
-		// 	// remove_incoming_source(parent);
-		// 	// add_incoming_source(parent->pipe, parent->config);
-		// 	// g_free(data);
-
-		// 	if (parent->cb_video.source)
-		// 	{
-		// 		LOGD("removing calback video source");
-		// 		gst_pad_unlink(parent->cb_video.source, parent->cb_video.sink);
-		// 		gst_element_release_request_pad(rtpbin, parent->cb_video.sink);
-		// 		// gst_object_unref(parent->cb_video.sink);
-		// 	}
-		// 	if (parent->cb_audio.source)
-		// 	{
-		// 		LOGD("removing calback audio source");
-		// 		gst_pad_unlink(parent->cb_audio.source, parent->cb_audio.sink);
-		// 		gst_element_release_request_pad(rtpbin, parent->cb_audio.sink);
-		// 		// gst_object_unref(parent->cb_audio.sink);
-		// 	}
-
-		// 	// unlink_release_and_unref(rtpbin, parent->vrecv_rtp_sink, parent->vudpsrc, "src");
-		// 	// unlink_release_and_unref(rtpbin, parent->vrecv_rtcp_sink, parent->vudpsrc_1, "src");
-		// 	// unlink_release_and_unref(rtpbin, parent->vsend_rtcp_src, parent->vudpsink, "sink");
-
-		// 	// unlink_release_and_unref(rtpbin, parent->arecv_rtp_sink, parent->audpsrc, "src");
-		// 	// unlink_release_and_unref(rtpbin, parent->arecv_rtcp_sink, parent->audpsrc_1, "src");
-		// 	// unlink_release_and_unref(rtpbin, parent->asend_rtcp_src, parent->audpsink, "sink");
-		// }
-
 		if (gst_pad_is_linked(data->sink))
 		{
-			g_print("Sink pad is already linked\n");
+			LOGW("Sink pad is already linked\n");
 
 			gst_pad_unlink(data->source, data->sink);
 		}
 
-		g_print("A new pad %s was created for %s\n", name, gst_element_get_name(element));
+		LOGI("A new pad %s was created for %s\n", name, gst_element_get_name(element));
 
-		g_print("element %s will be linked to %s\n",
-				gst_element_get_name(element),
-				gst_element_get_name(data->sink));
+		LOGW("element %s will be linked to %s\n",
+			 gst_element_get_name(element),
+			 gst_element_get_name(data->sink));
 		data->source = pad;
 		gst_pad_link(pad, data->sink);
 	}
@@ -118,22 +81,17 @@ GstElement *create_streaminsync_pipeline(pipeline_config_t *config)
 
 	GstClock *clock = gst_ntp_clock_new("main_ntp_clock", config->clock_ip, config->clock_port, 0);
 
-	// gst_system_clock_set_default(clock);
 	gst_pipeline_use_clock(GST_PIPELINE(pipe), clock);
 	gst_clock_wait_for_sync(clock, GST_CLOCK_TIME_NONE);
 
 	GstElement *rtpbin = gst_element_factory_make("rtpbin", "rtpbin");
-	// g_object_set(rtpbin, "latency", config->latency, NULL);
-	// g_object_set(rtpbin, "ntp-time-source", 0, NULL);
 	g_object_set(rtpbin, "ntp-time-source", 3, // clock-time
 				 "ntp-sync", TRUE,
 				 "buffer-mode", 4, // synced
 				 "max-rtcp-rtp-time-diff", 1,
 				 "do-lost", TRUE,
-				 "do-retransmission", FALSE,
-				 //  "latency", config->latency,
+				 "do-retransmission", TRUE,
 				 "drop-on-latency", TRUE,
-				 "autoremove", TRUE,
 				 NULL);
 
 	gst_bin_add(GST_BIN(pipe), rtpbin);
