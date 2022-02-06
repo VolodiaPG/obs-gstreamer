@@ -28,26 +28,27 @@ OBS_DECLARE_MODULE()
 // streaminsync.c
 extern const char *gstreamer_source_get_name(void *type_data);
 extern void *gstreamer_source_create(obs_data_t *settings,
-				     obs_source_t *source);
+									 obs_source_t *source);
 extern void gstreamer_source_destroy(void *data);
 extern void gstreamer_source_get_defaults(obs_data_t *settings);
 extern obs_properties_t *gstreamer_source_get_properties(void *data);
 extern void gstreamer_source_update(void *data, obs_data_t *settings);
 extern void gstreamer_source_show(void *data);
 extern void gstreamer_source_hide(void *data);
+extern void on_load(void);
 
 // gstreamer-encoder.c
 extern const char *gstreamer_encoder_get_name(void *type_data);
 extern void *gstreamer_encoder_create(obs_data_t *settings,
-				      obs_encoder_t *encoder);
+									  obs_encoder_t *encoder);
 extern void gstreamer_encoder_destroy(void *data);
 extern bool gstreamer_encoder_encode(void *data, struct encoder_frame *frame,
-				     struct encoder_packet *packet,
-				     bool *received_packet);
+									 struct encoder_packet *packet,
+									 bool *received_packet);
 extern void gstreamer_encoder_get_defaults(obs_data_t *settings);
 extern obs_properties_t *gstreamer_encoder_get_properties(void *data);
 extern bool gstreamer_encoder_get_extra_data(void *data, uint8_t **extra_data,
-					     size_t *size);
+											 size_t *size);
 
 // // gstreamer-filter.c
 // extern const char *gstreamer_filter_get_name_video(void *type_data);
@@ -67,12 +68,12 @@ extern bool gstreamer_encoder_get_extra_data(void *data, uint8_t **extra_data,
 // gstreamer-output.c
 extern const char *gstreamer_output_get_name(void *type_data);
 extern void *gstreamer_output_create(obs_data_t *settings,
-				     obs_output_t *output);
+									 obs_output_t *output);
 extern void gstreamer_output_destroy(void *data);
 extern bool gstreamer_output_start(void *data);
 extern void gstreamer_output_stop(void *data, uint64_t ts);
 extern void gstreamer_output_encoded_packet(void *data,
-					    struct encoder_packet *packet);
+											struct encoder_packet *packet);
 extern void gstreamer_output_get_defaults(obs_data_t *settings);
 extern obs_properties_t *gstreamer_output_get_properties(void *data);
 
@@ -84,7 +85,7 @@ bool obs_module_load(void)
 		.id = "streaminsync",
 		.type = OBS_SOURCE_TYPE_INPUT,
 		.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO |
-				OBS_SOURCE_DO_NOT_DUPLICATE,
+						OBS_SOURCE_DO_NOT_DUPLICATE,
 
 		.get_name = gstreamer_source_get_name,
 		.create = gstreamer_source_create,
@@ -173,6 +174,8 @@ bool obs_module_load(void)
 	obs_register_output(&output_info);
 
 	gst_init(NULL, NULL);
+
+	on_load();
 
 	return true;
 }

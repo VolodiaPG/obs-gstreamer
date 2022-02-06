@@ -34,31 +34,59 @@
 typedef struct
 {
 	GstElement *pipe;
-	obs_source_t *source;
-	obs_data_t *settings;
-	gint64 frame_count;
-	gint64 audio_count;
-	GSource *timeout;
 	GThread *thread;
 	GMainLoop *loop;
 	GMutex mutex;
 	GCond cond;
+	GSource *timeout;
+} global_data_t;
+
+typedef struct
+{
+	source_data_t *source_data;
+	obs_source_t *source;
+	obs_data_t *settings;
+	gint64 frame_count;
+	gint64 audio_count;
+	global_data_t *parent;
 } data_t;
 
-static void create_pipeline(data_t *data);
+global_data_t global_data;
 
 static void timeout_destroy(gpointer user_data)
 {
-	data_t *data = user_data;
+	global_data_t *data = user_data;
 
 	g_source_destroy(data->timeout);
 	g_source_unref(data->timeout);
 	data->timeout = NULL;
 }
 
+static gboolean bus_callback(GstBus *bus, GstMessage *message,
+							 gpointer user_data);
+
+static void create_pipeline(global_data_t *data)
+{
+	pipeline_config_t config = {
+		.clock_ip = "45.159.204.28",
+		.clock_port = 123,
+		.latency = 10000};
+	data->pipe = create_streaminsync_pipeline(&config);
+
+	if (!data->pipe)
+	{
+		LOGE("Failed to create pipeline");
+		return;
+	}
+
+	GstBus *bus = gst_element_get_bus(data->pipe);
+	gst_bus_add_watch(bus, bus_callback, data);
+	gst_object_unref(bus);
+}
+
 static gboolean start_pipe(gpointer user_data)
 {
-	data_t *data = user_data;
+	global_data_t *data = user_data;
 
 	GstBus *bus = gst_element_get_bus(data->pipe);
 	gst_bus_remove_watch(bus);
@@ -78,7 +106,7 @@ static gboolean start_pipe(gpointer user_data)
 static gboolean bus_callback(GstBus *bus, GstMessage *message,
 							 gpointer user_data)
 {
-	data_t *data = user_data;
+	global_data_t *data = user_data;
 
 	switch (GST_MESSAGE_TYPE(message))
 	{
@@ -91,17 +119,19 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message,
 	} // fallthrough
 	case GST_MESSAGE_EOS:
 		gst_element_set_state(data->pipe, GST_STATE_NULL);
-		if (obs_data_get_bool(data->settings, "clear_on_end"))
-			obs_source_output_video(data->source, NULL);
-		if (obs_data_get_bool(data->settings,
-							  GST_MESSAGE_TYPE(message) ==
-									  GST_MESSAGE_ERROR
-								  ? "restart_on_error"
-								  : "restart_on_eos") &&
+		// if (obs_data_get_bool(data->settings, "clear_on_end"))
+		// 	obs_source_output_video(data->source, NULL);
+		if (
+			// obs_data_get_bool(data->settings,
+			// 				  GST_MESSAGE_TYPE(message) ==
+			// 						  GST_MESSAGE_ERROR
+			// 					  ? "restart_on_error"
+			// 					  : "restart_on_eos") &&
 			data->timeout == NULL)
 		{
-			data->timeout = g_timeout_source_new(obs_data_get_int(
-				data->settings, "restart_timeout"));
+			// data->timeout = g_timeout_source_new(obs_data_get_int(
+			// 	data->settings, "restart_timeout"));
+			data->timeout = g_timeout_source_new(2000);
 			g_source_set_callback(data->timeout, start_pipe, data,
 								  timeout_destroy);
 			g_source_attach(data->timeout,
@@ -314,7 +344,7 @@ const char *gstreamer_source_get_name(void *type_data)
 
 static gboolean loop_startup(gpointer user_data)
 {
-	data_t *data = user_data;
+	global_data_t *data = user_data;
 
 	create_pipeline(data);
 
@@ -328,45 +358,35 @@ static gboolean loop_startup(gpointer user_data)
 	return G_SOURCE_REMOVE;
 }
 
-static void create_pipeline(data_t *data)
+static void add_endpoint(data_t *data)
 {
-	GError *err = NULL;
-
-	const char *ip = obs_data_get_string(data->settings, "client_ip");
-	const gint port = obs_data_get_int(data->settings, "port");
-	const gint latency = obs_data_get_int(data->settings, "latency");
 	const gint video_id = obs_data_get_int(data->settings, "source_id") * 2;
 	const gint audio_id = video_id + 1;
 
+	if (data->source_data != NULL)
 	{
-		pipeline_config_t config = {
-			.clock_ip = "45.159.204.28",
-			.clock_port = 123,
-			.latency = latency};
-		data->pipe = create_streaminsync_pipeline(&config);
-	}
-
-	{
-		receiver_config_t config = {
-			.video_id = video_id,
-			.audio_id = audio_id,
-			.dest = ip,
-			.ports = PORTS_FROM(port)};
-		add_incoming_source(data->pipe, &config);
-	}
-
-	if (data->pipe == NULL)
-	{
-		blog(LOG_ERROR, "Pipelining failed (it is null)");
-		g_error_free(err);
-
+		blog(LOG_ERROR, "source_data is not null, please remove the endpoint first");
 		return;
 	}
 
-	if (err != NULL)
+	blog(LOG_INFO, "Adding a new endpoint");
+	receiver_config_t *config = g_new0(receiver_config_t, 1);
+
+	config->dest = obs_data_get_string(data->settings, "client_ip");
+	config->audio_id = audio_id;
+	config->video_id = video_id;
+	const int port = obs_data_get_int(data->settings, "port");
+	for (int ii = 0; ii < NB_PORTS; ++ii)
 	{
-		blog(LOG_ERROR, "Cannot start GStreamer: %s", err->message);
-		g_error_free(err);
+		config->ports[ii] = port + ii;
+	}
+
+	data->source_data = add_incoming_source(data->parent->pipe, config);
+	set_source_to(data->source_data, GST_STATE_PLAYING);
+
+	if (data->source_data == NULL)
+	{
+		blog(LOG_ERROR, "Cannot add source");
 
 		obs_source_output_video(data->source, NULL);
 
@@ -375,7 +395,7 @@ static void create_pipeline(data_t *data)
 
 	{
 		gchar *buf = g_strdup_printf(VSINK_NAME_FORMAT, video_id);
-		GstElement *appsink_video = gst_bin_get_by_name(GST_BIN(data->pipe),
+		GstElement *appsink_video = gst_bin_get_by_name(GST_BIN(data->parent->pipe),
 														buf);
 		g_free(buf);
 		if (appsink_video == NULL)
@@ -394,7 +414,7 @@ static void create_pipeline(data_t *data)
 		// check if connected and remove if not
 		GstPad *pad = gst_element_get_static_pad(appsink_video, "sink");
 		if (!gst_pad_is_linked(pad))
-			gst_bin_remove(GST_BIN(data->pipe), appsink_video);
+			gst_bin_remove(GST_BIN(data->parent->pipe), appsink_video);
 
 		gst_object_unref(pad);
 		gst_object_unref(appsink_video);
@@ -402,7 +422,7 @@ static void create_pipeline(data_t *data)
 
 	{
 		gchar *buf = g_strdup_printf(ASINK_NAME_FORMAT, audio_id);
-		GstElement *appsink_audio = gst_bin_get_by_name(GST_BIN(data->pipe),
+		GstElement *appsink_audio = gst_bin_get_by_name(GST_BIN(data->parent->pipe),
 														buf);
 		g_free(buf);
 
@@ -423,7 +443,7 @@ static void create_pipeline(data_t *data)
 		// sink = gst_bin_get_by_name(GST_BIN(data->pipe), "audio");
 		GstPad *pad = gst_element_get_static_pad(appsink_audio, "sink");
 		if (!gst_pad_is_linked(pad))
-			gst_bin_remove(GST_BIN(data->pipe), appsink_audio);
+			gst_bin_remove(GST_BIN(data->parent->pipe), appsink_audio);
 
 		gst_object_unref(pad);
 		gst_object_unref(appsink_audio);
@@ -431,15 +451,26 @@ static void create_pipeline(data_t *data)
 
 	data->frame_count = 0;
 	data->audio_count = 0;
+}
 
-	GstBus *bus = gst_element_get_bus(data->pipe);
-	gst_bus_add_watch(bus, bus_callback, data);
-	gst_object_unref(bus);
+static void remove_endpoint(data_t *data)
+{
+	if (data->source_data == NULL)
+	{
+		blog(LOG_WARNING, "source_data is null, please add the endpoint first");
+		return;
+	}
+
+	remove_incoming_source(data->source_data);
+
+	g_free(data->source_data->config);
+	g_free(data->source_data);
+	data->source_data = NULL;
 }
 
 static gpointer _start(gpointer user_data)
 {
-	data_t *data = user_data;
+	global_data_t *data = user_data;
 
 	GMainContext *context = g_main_context_new();
 
@@ -473,7 +504,7 @@ static gpointer _start(gpointer user_data)
 	return NULL;
 }
 
-static void start(data_t *data)
+static void start_pipeline(global_data_t *data)
 {
 	g_mutex_lock(&data->mutex);
 
@@ -483,23 +514,7 @@ static void start(data_t *data)
 	g_mutex_unlock(&data->mutex);
 }
 
-void *gstreamer_source_create(obs_data_t *settings, obs_source_t *source)
-{
-	data_t *data = g_new0(data_t, 1);
-
-	data->source = source;
-	data->settings = settings;
-
-	g_mutex_init(&data->mutex);
-	g_cond_init(&data->cond);
-
-	if (obs_data_get_bool(settings, "stop_on_hide") == false)
-		start(data);
-
-	return data;
-}
-
-static void stop(data_t *data)
+static void stop_pipeline(global_data_t *data)
 {
 	if (data->thread == NULL)
 		return;
@@ -508,18 +523,53 @@ static void stop(data_t *data)
 
 	g_thread_join(data->thread);
 	data->thread = NULL;
+}
+
+static void start_endpoint(data_t *data)
+{
+	g_mutex_lock(&data->parent->mutex);
+
+	add_endpoint(data);
+
+	g_mutex_unlock(&data->parent->mutex);
+}
+
+void *gstreamer_source_create(obs_data_t *settings, obs_source_t *source)
+{
+	LOGD("Create new gstreamer source");
+	data_t *data = g_new0(data_t, 1);
+	data->parent = &global_data;
+
+	data->source = source;
+	data->settings = settings;
+
+	if (obs_data_get_bool(settings, "stop_on_hide") == false)
+		start_endpoint(data);
+
+	return data;
+}
+
+static void stop_endpoint(data_t *data)
+{
+	LOGD("Stopping endpoint");
+	g_mutex_lock(&data->parent->mutex);
+
+	remove_endpoint(data);
+
+	g_mutex_unlock(&data->parent->mutex);
 
 	obs_source_output_video(data->source, NULL);
 }
 
 void gstreamer_source_destroy(void *user_data)
 {
+	LOGD("Destroying source");
 	data_t *data = user_data;
 
-	stop(data);
+	stop_endpoint(data);
 
-	g_mutex_clear(&data->mutex);
-	g_cond_clear(&data->cond);
+	// g_mutex_clear(&data->parent->mutex);
+	// g_cond_clear(&data->parent->cond);
 
 	g_free(data);
 }
@@ -529,7 +579,6 @@ void gstreamer_source_get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "source_id", 0);
 	obs_data_set_default_string(settings, "sender_ip", "127.0.0.1");
 	obs_data_set_default_int(settings, "port", 5000);
-	obs_data_set_default_int(settings, "latency", 5000);
 
 	obs_data_set_default_bool(settings, "restart_on_eos", true);
 	obs_data_set_default_bool(settings, "restart_on_error", false);
@@ -562,8 +611,6 @@ obs_properties_t *gstreamer_source_get_properties(void *data)
 							OBS_TEXT_DEFAULT);
 	obs_properties_add_int(props, "port", "The first port to use",
 						   1000, 65535, 1);
-	obs_properties_add_int(props, "latency", "End to end effective latency (must be at least the latency of all the links and the sources + encoders)",
-						   100, 120000, 1);
 	obs_properties_add_bool(props, "restart_on_eos",
 							"Try to restart when end of stream is reached");
 	obs_properties_add_bool(
@@ -588,7 +635,9 @@ obs_properties_t *gstreamer_source_get_properties(void *data)
 
 void gstreamer_source_update(void *data, obs_data_t *settings)
 {
-	stop(data);
+	LOGD("Update gstreamer source");
+
+	stop_endpoint(data);
 
 	// Don't start the pipeline if source is hidden and 'stop_on_hide' is set.
 	// From GUI this is probably irrelevant but works around some quirks when
@@ -597,17 +646,28 @@ void gstreamer_source_update(void *data, obs_data_t *settings)
 		!obs_source_showing(((data_t *)data)->source))
 		return;
 
-	start(data);
+	start_endpoint(data);
 }
 
 void gstreamer_source_show(void *data)
 {
-	if (((data_t *)data)->pipe == NULL)
-		start(data);
+	// if (((data_t *)data)->pipe == NULL)
+	// 	start(data);
+	add_endpoint(data);
 }
 
 void gstreamer_source_hide(void *data)
 {
 	if (obs_data_get_bool(((data_t *)data)->settings, "stop_on_hide"))
-		stop(data);
+	{
+		// stop(data);
+		remove_endpoint(data);
+	}
+}
+
+void on_load()
+{
+	g_mutex_init(&global_data.mutex);
+	g_cond_init(&global_data.cond);
+	start_pipeline(&global_data);
 }

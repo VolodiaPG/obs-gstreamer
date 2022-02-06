@@ -86,12 +86,13 @@ GstElement *create_streaminsync_pipeline(pipeline_config_t *config)
 
 	GstElement *rtpbin = gst_element_factory_make("rtpbin", "rtpbin");
 	g_object_set(rtpbin, "ntp-time-source", 3, // clock-time
+				//  "rtp-profile", 3,			   // rtcp-fb-nack
 				 "ntp-sync", TRUE,
-				 "buffer-mode", 4, // synced
-				 "max-rtcp-rtp-time-diff", 1,
-				 "do-lost", TRUE,
-				 "do-retransmission", TRUE,
-				 "drop-on-latency", TRUE,
+				 "buffer-mode", 4, // synced,
+				//  "max-rtcp-rtp-time-diff", 1,
+				//  "do-lost", TRUE,
+				//  "do-retransmission", TRUE,
+				//  "drop-on-latency", TRUE,
 				 NULL);
 
 	gst_bin_add(GST_BIN(pipe), rtpbin);
@@ -102,6 +103,12 @@ GstElement *create_streaminsync_pipeline(pipeline_config_t *config)
 source_data_t *add_incoming_source(GstElement *pipe, receiver_config_t *config)
 {
 	gchar *buf; // a general purpose buffer that can be freed after use
+
+	if (pipe == NULL)
+	{
+		LOGE("pipe is NULL\n");
+		return NULL;
+	}
 
 	GstElement *rtpbin = gst_bin_get_by_name(GST_BIN(pipe), "rtpbin");
 	if (!rtpbin)
@@ -128,16 +135,18 @@ source_data_t *add_incoming_source(GstElement *pipe, receiver_config_t *config)
 	gst_caps_unref(vcaps);
 
 	data->vdepay = gst_element_factory_make("rtph264depay", NULL);
-	data->vparse = gst_element_factory_make("h264parse", NULL);
+	data->vdepayqueue = gst_element_factory_make("queue", NULL);
+	data->vparse = gst_element_factory_make("identity", NULL);
 	data->vdec = gst_element_factory_make("avdec_h264", NULL);
+	data->vdecqueue = gst_element_factory_make("identity", NULL); // TODO check that
 	data->vconv = gst_element_factory_make("videoconvert", NULL);
 
 	buf = g_strdup_printf(VSINK_NAME_FORMAT, config->video_id);
 	data->vsink = gst_element_factory_make(vsink_bin, buf);
 	g_free(buf);
 
-	g_object_set(data->vsink, "sync", FALSE,
-				 "async", FALSE, NULL);
+	// g_object_set(data->vsink, "sync", FALSE,
+	// 			 "async", FALSE, NULL);
 
 	data->vudpsrc_1 = gst_element_factory_make("udpsrc", NULL);
 	g_object_set(data->vudpsrc_1, "port", config->ports[1], NULL);
@@ -162,7 +171,9 @@ source_data_t *add_incoming_source(GstElement *pipe, receiver_config_t *config)
 	gst_caps_unref(acaps);
 
 	data->adepay = gst_element_factory_make("rtpopusdepay", NULL);
+	data->adepayqueue = gst_element_factory_make("queue", NULL);
 	data->adec = gst_element_factory_make("opusdec", NULL);
+	data->adecqueue = gst_element_factory_make("queue", NULL);
 	data->aconv = gst_element_factory_make("audioconvert", NULL);
 	data->aresample = gst_element_factory_make("audioresample", NULL);
 
@@ -170,8 +181,8 @@ source_data_t *add_incoming_source(GstElement *pipe, receiver_config_t *config)
 	data->asink = gst_element_factory_make(asink_bin, buf);
 	g_free(buf);
 
-	g_object_set(data->asink, "sync", FALSE,
-				 "async", FALSE, NULL);
+	// g_object_set(data->asink, "sync", FALSE,
+	// 			 "async", FALSE, NULL);
 
 	data->audpsrc_1 = gst_element_factory_make("udpsrc", NULL);
 	g_object_set(data->audpsrc_1, "port", config->ports[4], NULL);
@@ -182,20 +193,14 @@ source_data_t *add_incoming_source(GstElement *pipe, receiver_config_t *config)
 				 "sync", FALSE,
 				 "async", FALSE, NULL);
 
-	if (!pipe || !data->vudpsrc || !data->vdepay || !data->vparse || !data->vdec || !data->vconv || !data->vsink ||
-		!data->vudpsrc_1 || !data->vudpsink || !data->audpsrc || !data->adepay || !data->adec || !data->aconv || !data->aresample || !data->asink ||
-		!data->audpsrc_1 || !data->audpsink)
-	{
-		GST_WARNING("Not all elements could be created.\n");
-		return NULL;
-	}
-
 	gst_bin_add_many(GST_BIN(pipe),
 					 // video
 					 data->vudpsrc,
 					 data->vdepay,
+					 data->vdepayqueue,
 					 data->vparse,
 					 data->vdec,
+					 data->vdecqueue,
 					 data->vconv,
 					 data->vudpsrc_1,
 					 data->vudpsink,
@@ -203,15 +208,17 @@ source_data_t *add_incoming_source(GstElement *pipe, receiver_config_t *config)
 					 // audio
 					 data->audpsrc,
 					 data->adepay,
+					 data->adepayqueue,
 					 data->adec,
+					 data->adecqueue,
 					 data->aconv,
 					 data->aresample,
 					 data->audpsrc_1,
 					 data->audpsink,
 					 data->asink,
 					 NULL);
-	if (!gst_element_link_many(data->vdepay, data->vparse, data->vdec, data->vconv, data->vsink, NULL) //
-		|| !gst_element_link_many(data->adepay, data->adec, data->aconv, data->aresample, data->asink, NULL))
+	if (!gst_element_link_many(data->vdepay, data->vdepayqueue, data->vparse, data->vdec, data->vdecqueue, data->vconv, data->vsink, NULL) //
+		|| !gst_element_link_many(data->adepay, data->adepayqueue, data->adec, data->adecqueue, data->aconv, data->aresample, data->asink, NULL))
 	{
 		GST_WARNING("can't link elements");
 		return NULL;
@@ -265,21 +272,25 @@ static void set_state_many(GstState state, GstElement *element, ...)
 	va_end(args);
 }
 
-#define SOURCE_ELEMS data->vudpsrc,   \
-					 data->vdepay,    \
-					 data->vparse,    \
-					 data->vdec,      \
-					 data->vconv,     \
-					 data->vsink,     \
-					 data->vudpsrc_1, \
-					 data->vudpsink,  \
-					 data->audpsrc,   \
-					 data->adepay,    \
-					 data->adec,      \
-					 data->aconv,     \
-					 data->aresample, \
-					 data->asink,     \
-					 data->audpsink,  \
+#define SOURCE_ELEMS data->vudpsrc,     \
+					 data->vdepay,      \
+					 data->vdepayqueue, \
+					 data->vparse,      \
+					 data->vdec,        \
+					 data->vdecqueue,   \
+					 data->vconv,       \
+					 data->vsink,       \
+					 data->vudpsrc_1,   \
+					 data->vudpsink,    \
+					 data->audpsrc,     \
+					 data->adepay,      \
+					 data->adepayqueue, \
+					 data->adec,        \
+					 data->adecqueue,   \
+					 data->aconv,       \
+					 data->aresample,   \
+					 data->asink,       \
+					 data->audpsink,    \
 					 data->audpsrc_1
 void set_source_to(source_data_t *data, GstState state)
 {

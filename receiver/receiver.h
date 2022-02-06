@@ -23,13 +23,13 @@ typedef struct
 {
 	const gchar *clock_ip;
 	const gint clock_port;
-	const guint64 latency;
+	const gint64 latency;
 } pipeline_config_t;
 
 typedef struct
 {
-	const gint video_id;
-	const gint audio_id;
+	gint video_id;
+	gint audio_id;
 	const gchar *dest;
 	// Used ports, in order:
 	// 0: video
@@ -38,7 +38,7 @@ typedef struct
 	// 3: audio
 	// 4: audio
 	// 5: audio
-	const gint ports[NB_PORTS];
+	gint ports[NB_PORTS];
 } receiver_config_t;
 
 typedef struct
@@ -54,15 +54,19 @@ typedef struct
 {
 	GstElement *vudpsrc;
 	GstElement *vdepay;
+	GstElement *vdepayqueue;
 	GstElement *vparse;
 	GstElement *vdec;
+	GstElement* vdecqueue;
 	GstElement *vconv;
 	GstElement *vsink;
 	GstElement *vudpsrc_1;
 	GstElement *vudpsink;
 	GstElement *audpsrc;
 	GstElement *adepay;
+	GstElement *adepayqueue;
 	GstElement *adec;
+	GstElement *adecqueue;
 	GstElement *aconv;
 	GstElement *aresample;
 	GstElement *asink;

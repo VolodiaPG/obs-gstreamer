@@ -134,10 +134,20 @@ gboolean create_pipeline(data_t *data)
     gst_pipeline_use_clock(GST_PIPELINE(data->pipe), clock);
     gst_clock_wait_for_sync(clock, GST_CLOCK_TIME_NONE);
 
+    if (data->settings->video_id == 0)
+    {
+        gst_pipeline_set_latency(GST_PIPELINE(data->pipe), 500 * GST_MSECOND);
+        printf("Added latency");
+    }
+
     GstElement *rtpbin = gst_element_factory_make("rtpbin", "rtpbin");
     //g_object_set(rtpbin, "rtp-profile", 3, NULL); // 3 = RTP/AVPF
-    g_object_set(rtpbin, "rtcp-sync-send-time", FALSE, NULL); // TRUE = send time, FALSE = capture time
-    g_object_set(rtpbin, "ntp-time-source", 3, NULL);         // 3 = clock-time
+    g_object_set(rtpbin, "ntp-time-source", 3, // 3 = clock-time
+                 "rtcp-sync-send-time", FALSE, // TRUE = send time, FALSE = capture time
+                                               //  "do-lost", TRUE,
+                                               //  "do-retransmission", TRUE,
+                                               //  "rtp-profile", 3,
+                 NULL);
 
     // VIDEO
 
@@ -159,15 +169,15 @@ gboolean create_pipeline(data_t *data)
 
     GstElement *venc = gst_element_factory_make("x264enc", "venc");
     g_object_set(venc,
-                 //  "tune", 0,
-                 //  "profile", 0,
-                 //  "key-int-max", 30,
-                 //  "bframes", 2,
-                 //  "byte-stream", TRUE,
+                 "tune", 4,
+                 //   "profile", 0,
+                 //   "key-int-max", 30,
+                 //   "bframes", 2,
+                 //   "byte-stream", TRUE,
                  "bitrate", data->settings->bitrate,
-                 //  "speed-preset", 3, // veryfast
-                 //  "threads", 1,
-                 //  "pass", 0, // O: cbr
+                 "speed-preset", 2, // superfast
+                                    //   "threads", 1,
+                                    //   "pass", 0, // O: cbr
                  NULL);
     GstElement *venccapsfilter = gst_element_factory_make("capsfilter", "venccapsfilter");
     g_object_set(venccapsfilter, "caps", gst_caps_new_simple("video/x-h264", "profile", G_TYPE_STRING, "high", NULL),

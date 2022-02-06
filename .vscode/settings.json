@@ -11,7 +11,10 @@
         "string_view": "cpp",
         "*.tcc": "c",
         "cstdlib": "c",
-        "mutex": "c"
+        "mutex": "c",
+        "functional": "c",
+        "iostream": "c",
+        "receiver.h": "c"
     },
     "mesonbuild.configureOnOpen": true
 }

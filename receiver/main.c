@@ -57,7 +57,7 @@ static gboolean loop_startup(gpointer user_data)
         pipeline_config_t config = {
             .clock_ip = "45.159.204.28",
             .clock_port = 123,
-            .latency = 5000};
+            .latency = 10000};
         data->pipe = create_streaminsync_pipeline(&config);
     }
 
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
     receiver_config_t config2 = {
         .video_id = 2,
         .audio_id = 3,
-        .dest = "127.0.0.1",
+        .dest = "10.4.39.53",
         .ports = PORTS_FROM(6000)};
 
     g_mutex_lock(&data->mutex);
@@ -155,7 +155,7 @@ int main(int argc, char **argv)
     set_source_to(source_data, GST_STATE_PLAYING);
     g_mutex_unlock(&data->mutex);
 
-#define TIME 7
+#define TIME 15
 
     while (!done)
     {
@@ -174,47 +174,47 @@ int main(int argc, char **argv)
         }
     }
 
-    done = FALSE;
-    start_time = gst_clock_get_time(gst_system_clock_obtain());
+    // done = FALSE;
+    // start_time = gst_clock_get_time(gst_system_clock_obtain());
 
-    while (!done)
-    {
-        if (gst_clock_get_time(gst_system_clock_obtain()) - start_time > TIME * GST_SECOND)
-        {
-            gst_println("Remove the last source");
+    // while (!done)
+    // {
+    //     if (gst_clock_get_time(gst_system_clock_obtain()) - start_time > TIME * GST_SECOND)
+    //     {
+    //         gst_println("Remove the last source");
 
-            g_mutex_lock(&data->mutex);
+    //         g_mutex_lock(&data->mutex);
 
-            remove_incoming_source(source_data);
+    //         remove_incoming_source(source_data);
 
-            g_mutex_unlock(&data->mutex);
+    //         g_mutex_unlock(&data->mutex);
 
-            g_free(source_data);
-            source_data = NULL;
+    //         g_free(source_data);
+    //         source_data = NULL;
 
-            done = TRUE;
-        }
-    }
+    //         done = TRUE;
+    //     }
+    // }
 
-    done = FALSE;
-    start_time = gst_clock_get_time(gst_system_clock_obtain());
+    // done = FALSE;
+    // start_time = gst_clock_get_time(gst_system_clock_obtain());
 
-    while (!done)
-    {
-        if (gst_clock_get_time(gst_system_clock_obtain()) - start_time > TIME * GST_SECOND)
-        {
-            gst_println("Adding new source");
+    // while (!done)
+    // {
+    //     if (gst_clock_get_time(gst_system_clock_obtain()) - start_time > TIME * GST_SECOND)
+    //     {
+    //         gst_println("Adding new source");
 
-            g_mutex_lock(&data->mutex);
+    //         g_mutex_lock(&data->mutex);
 
-            source_data = add_incoming_source(data->pipe, &config2);
-            set_source_to(source_data, GST_STATE_PLAYING);
+    //         source_data = add_incoming_source(data->pipe, &config2);
+    //         set_source_to(source_data, GST_STATE_PLAYING);
 
-            g_mutex_unlock(&data->mutex);
+    //         g_mutex_unlock(&data->mutex);
 
-            done = TRUE;
-        }
-    }
+    //         done = TRUE;
+    //     }
+    // }
 
 #undef TIME
 
