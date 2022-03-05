@@ -70,7 +70,7 @@ static void create_pipeline(global_data_t *data)
 	pipeline_config_t config = {
 		.clock_ip = "45.159.204.28",
 		.clock_port = 123,
-		.latency = 10000};
+		.latency = 5000};
 	data->pipe = create_streaminsync_pipeline(&config);
 
 	if (!data->pipe)
@@ -382,7 +382,6 @@ static void add_endpoint(data_t *data)
 	}
 
 	data->source_data = add_incoming_source(data->parent->pipe, config);
-	set_source_to(data->source_data, GST_STATE_PLAYING);
 
 	if (data->source_data == NULL)
 	{
@@ -392,6 +391,8 @@ static void add_endpoint(data_t *data)
 
 		return;
 	}
+	
+	set_source_to(data->source_data, GST_STATE_PLAYING);
 
 	{
 		gchar *buf = g_strdup_printf(VSINK_NAME_FORMAT, video_id);

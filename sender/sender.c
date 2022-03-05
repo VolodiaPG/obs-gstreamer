@@ -136,8 +136,8 @@ gboolean create_pipeline(data_t *data)
 
     if (data->settings->video_id == 0)
     {
-        gst_pipeline_set_latency(GST_PIPELINE(data->pipe), 500 * GST_MSECOND);
-        printf("Added latency");
+        // gst_pipeline_set_latency(GST_PIPELINE(data->pipe), 500 * GST_MSECOND);
+        // printf("Added latency");
     }
 
     GstElement *rtpbin = gst_element_factory_make("rtpbin", "rtpbin");
