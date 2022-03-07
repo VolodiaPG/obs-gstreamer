@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:id="@+id/network_section"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Networking"
+        android:textColor="@android:color/white"
+        tools:text="Networking" />
+
+    <Button
+        android:id="@+id/button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="onNetworkSaveClick"
+        android:text="Save" />
+
+    <TableLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <TextView
+                android:id="@+id/network_ip_textview"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="IP"
+                android:textColor="@android:color/white"
+                tools:text="IP" />
+
+            <TextView
+                android:id="@+id/network_port_textview"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Port"
+                android:textColor="@android:color/white"
+                tools:text="Port" />
+
+            <TextView
+                android:id="@+id/network_id_textview"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ID"
+                android:textColor="@android:color/white"
+                tools:text="ID" />
+        </TableRow>
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <EditText
+                android:id="@+id/network_ip_input"
+                android:layout_width="wrap_content"
+                android:layout_height="59dp"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:textColor="@android:color/white" />
+
+            <EditText
+                android:id="@+id/network_port_input"
+                android:layout_width="144dp"
+                android:layout_height="59dp"
+                android:ems="10"
+                android:inputType="number"
+                android:textColor="@android:color/white" />
+
+            <EditText
+                android:id="@+id/network_id_input"
+                android:layout_width="57dp"
+                android:layout_height="59dp"
+                android:ems="10"
+                android:inputType="number"
+                android:textColor="@android:color/white" />
+
+        </TableRow>
+
+    </TableLayout>
+
+</LinearLayout>

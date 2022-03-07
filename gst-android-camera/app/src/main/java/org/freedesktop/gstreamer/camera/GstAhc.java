@@ -35,6 +35,8 @@ public class GstAhc implements Closeable, SurfaceHolder.Callback {
 
     private native void nativeSetAutoFocus(boolean enabled);
 
+    private native void nativeChangeNetworking(String ip, int port, int id);
+
     public enum Rotate {
         NONE,
         CLOCKWISE,
@@ -138,6 +140,10 @@ public class GstAhc implements Closeable, SurfaceHolder.Callback {
         } else {
             nativePlay();
         }
+    }
+
+    public void saveNetwork(String ip, int port, int id){
+        nativeChangeNetworking(ip, port, id);
     }
 
     @Override

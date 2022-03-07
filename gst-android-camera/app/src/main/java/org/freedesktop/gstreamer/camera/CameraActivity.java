@@ -17,6 +17,7 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.RadioButton;
 import android.widget.Spinner;
@@ -103,10 +104,13 @@ public class CameraActivity extends AppCompatActivity {
             return false;
         }
     };
+    public static final String preferences = "streaminsync";
+    private Config config;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        this.config = new Config(getSharedPreferences(preferences, 0));
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
 
@@ -189,6 +193,11 @@ public class CameraActivity extends AppCompatActivity {
 
         setOrientation (this.getWindowManager().getDefaultDisplay()
                 .getRotation());
+
+        // Set the preferences
+        ((EditText) findViewById(R.id.network_ip_input)).setText(config.getIp());
+        ((EditText) findViewById(R.id.network_port_input)).setText(String.valueOf(config.getPort()));
+        ((EditText) findViewById(R.id.network_id_input)).setText(String.valueOf(config.getID()));
     }
 
     @Override
@@ -273,6 +282,18 @@ public class CameraActivity extends AppCompatActivity {
             default:
                 break;
         }
+    }
+
+    public void onNetworkSaveClick(View view){
+        String ip = ((EditText)findViewById(R.id.network_ip_input)).getText().toString();
+        int port =  Integer.parseInt(((EditText)findViewById(R.id.network_port_input)).getText().toString());
+        int id =  Integer.parseInt(((EditText)findViewById(R.id.network_id_input)).getText().toString());
+
+        config.setIP(ip);
+        config.setPort(port);
+        config.setID(id);
+
+        gstAhc.saveNetwork(ip, port, id);
     }
 
     private void setOrientation (int rotation)

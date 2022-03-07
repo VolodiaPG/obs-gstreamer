@@ -305,7 +305,7 @@ void remove_incoming_source(source_data_t *data)
 		LOGW("rtpbin not found");
 	}
 
-	// set_state_many(GST_STATE_NULL, SOURCE_ELEMS, NULL);
+	set_state_many(GST_STATE_NULL, SOURCE_ELEMS, NULL);
 
 	g_signal_handler_disconnect(rtpbin, data->vdepay_cb_id);
 	g_signal_handler_disconnect(rtpbin, data->adepay_cb_id);
@@ -334,7 +334,7 @@ void remove_incoming_source(source_data_t *data)
 	unlink_release_and_unref(rtpbin, data->arecv_rtcp_sink, data->audpsrc_1, "src");
 	unlink_release_and_unref(rtpbin, data->asend_rtcp_src, data->audpsink, "sink");
 
-	set_state_many(GST_STATE_NULL, SOURCE_ELEMS, NULL);
+	// set_state_many(GST_STATE_NULL, SOURCE_ELEMS, NULL);
 	gst_bin_remove_many(GST_BIN(data->pipe), SOURCE_ELEMS, NULL);
 
 	gst_object_unref(rtpbin);
